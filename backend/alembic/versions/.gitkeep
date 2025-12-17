@@ -1,0 +1,7 @@
+# This directory stores Alembic migration files
+# Migration files will be generated here when you run:
+# alembic revision --autogenerate -m "description"
+#
+# NOTE: Only actual migration files should be in this directory.
+# Example/template files will be detected by Alembic and cause errors.
+
