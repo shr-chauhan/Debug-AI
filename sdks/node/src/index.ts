@@ -60,7 +60,12 @@ export function errorIngestionMiddleware(
 
     // Capture error data
     // Get status code from error object or default to 500
-    const statusCode = (err as any).statusCode || (err as any).status || res.statusCode || 500;
+    // Note: res.statusCode defaults to 200, so if it's 200 we ignore it (errors shouldn't be 200)
+    let statusCode = (err as any).statusCode || (err as any).status;
+    if (!statusCode) {
+      // Only use res.statusCode if it's been set to an error code (not default 200)
+      statusCode = (res.statusCode && res.statusCode !== 200) ? res.statusCode : 500;
+    }
     
     // Sanitize path to avoid leaking IDs and reduce cardinality
     // Use originalUrl to preserve original path (before middleware modifications)

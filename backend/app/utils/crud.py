@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app import models, schemas
+from app.database import models
+from app.schemas import schemas
 
 
 def get_or_create_project(db: Session, project_key: str, project_name: str = None):
@@ -30,13 +31,12 @@ def create_error_event(db: Session, event: schemas.EventCreate):
     # Get or create project
     project = get_or_create_project(db, event.project_key)
     
-    # Create payload
+    # Create payload (status_code is now stored as a column, not in payload)
     payload = {
         "message": event.message,
         "stack": event.stack,
         "method": event.method,
         "path": event.path,
-        "status_code": event.status_code,
     }
     
     # Create error event
@@ -45,6 +45,7 @@ def create_error_event(db: Session, event: schemas.EventCreate):
     db_event = models.ErrorEvent(
         timestamp=event.timestamp,
         project_id=project.id,
+        status_code=event.status_code,
         payload=payload
     )
     

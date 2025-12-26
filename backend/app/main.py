@@ -4,15 +4,18 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.database import get_db, engine
-from app import models, schemas, crud
+from app.database import get_db, engine, models
+from app.schemas import schemas
+from app.utils.crud import create_error_event
+from app.celery import analyze_error_event
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Create tables only in development
 if os.getenv("ENV", "development") == "development":
-    models.Base.metadata.create_all(bind=engine)
+    from app.database.database import Base
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Error Ingestion API", version="1.0.0")
 
@@ -35,7 +38,18 @@ async def create_event(
     Create a new error event.
     """
     try:
-        db_event = crud.create_error_event(db, event)
+        db_event = create_error_event(db, event)
+        
+        # Enqueue AI analysis task if status_code >= 500 (non-blocking)
+        if db_event.status_code and db_event.status_code >= 400:
+            try:
+                print(f"Enqueuing AI analysis task for error_event {db_event.id}")
+                analyze_error_event.delay(db_event.id)
+                logger.info(f"Enqueued AI analysis task for error_event {db_event.id}")
+            except Exception as e:
+                # Log but don't fail the request if task enqueueing fails
+                logger.warning(f"Failed to enqueue AI analysis task: {e}")
+        
         return schemas.EventResponse(
             id=db_event.id,
             timestamp=db_event.timestamp,
