@@ -28,7 +28,7 @@ def build_debugging_prompt(
     """
     # Limit total code lines
     limited_context = _limit_code_context(source_code_context, max_total_lines)
-    
+    print('limited_context', limited_context)
     prompt_parts = []
     
     # System instruction
@@ -38,6 +38,8 @@ CRITICAL CONSTRAINTS:
 - Base your analysis ONLY on the provided error message, stack trace, and source code context
 - DO NOT hallucinate logs, runtime values, or information not provided
 - DO NOT make assumptions about code that isn't shown
+- DO NOT correct typos or misspellings in error messages - analyze them exactly as written
+- If an error message says a function/variable name with a typo, analyze that exact name, not a corrected version
 - Focus on what you can see in the stack trace and source code
 
 """)
@@ -95,16 +97,18 @@ Please provide:
 1. ROOT CAUSE ANALYSIS
    - What is the likely root cause of this error?
    - What evidence from the stack trace and source code supports this?
+   - IMPORTANT: Analyze the error message exactly as written - do not correct typos or assume what was "meant"
 
 2. SUGGESTED FIX
    - What specific code changes would fix this error?
    - Include the exact file path and line number(s) where changes are needed
+   - If the error mentions a typo, identify the typo explicitly
 
 3. PREVENTION STRATEGY
    - How could this error be prevented in the future?
    - What code patterns or practices would help avoid this?
 
-Remember: Base your analysis ONLY on the provided context. Do not invent details.
+Remember: Base your analysis ONLY on the provided context. Do not invent details. Do not "correct" error messages - analyze them exactly as written.
 """)
     
     return "\n".join(prompt_parts)

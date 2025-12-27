@@ -175,6 +175,7 @@ def perform_ai_analysis(
             # Continue without source code context
     
     # Step 3: Build structured prompt
+    print('source code context',source_code_context)
     prompt = build_debugging_prompt(
         error_message=error_message,
         stack_trace=error_stack,
@@ -187,10 +188,10 @@ def perform_ai_analysis(
         analysis_result = _call_llm(prompt)
         return analysis_result
     except Exception as e:
-        logger.error(f"LLM call failed: {e}")
+        logger.error(f"LLM call failed: {e}", exc_info=True)
         # Fallback to basic analysis if LLM fails
         return {
-            "analysis": f"Error Analysis:\n\nMessage: {error_message}\n\nStack Trace:\n{error_stack}\n\nNote: LLM analysis failed. Please review the stack trace manually.",
+            "analysis": f"Error Analysis:\n\nMessage: {error_message}\n\nStack Trace:\n{error_stack}\n\nNote: LLM analysis failed ({str(e)}). Please review the stack trace manually.",
             "model": "fallback",
             "confidence": "low"
         }
@@ -229,12 +230,16 @@ def _call_llm(prompt: str) -> dict:
     if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable not set")
     
-    # Initialize OpenAI client
-    client = openai.OpenAI(api_key=api_key)
+    # Initialize OpenAI client - using pattern that works with OpenAI SDK
+    # If api_key is provided, pass it explicitly; otherwise OpenAI picks from env
+    client = openai.OpenAI(api_key=api_key) if api_key else openai.OpenAI()
+    
+    # Get model from environment (default to gpt-4o-mini)
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     
     # Call OpenAI API
     response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),  # Default to gpt-4o-mini for cost efficiency
+        model=model,
         messages=[
             {
                 "role": "system",
@@ -245,7 +250,7 @@ def _call_llm(prompt: str) -> dict:
                 "content": prompt
             }
         ],
-        temperature=0.3,  # Lower temperature for more focused, deterministic analysis
+        temperature=0.1,  # Very low temperature for precise, deterministic analysis without corrections
         max_tokens=2000  # Limit response length
     )
     

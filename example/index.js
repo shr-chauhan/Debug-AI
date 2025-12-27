@@ -29,7 +29,7 @@ app.get('/test-error', async (req, res, next) => {
     const userId = req.query.id || '999'; // Default to non-existent user to trigger error
     
     // Simulate database lookup that fails
-    const user = await simulateDatabaseLookup(userId);
+    const user = await imulateDatabaseLookup(userId);
     
     if (!user) {
       const error = new Error(`User with id ${userId} not found`);

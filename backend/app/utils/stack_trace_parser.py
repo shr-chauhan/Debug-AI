@@ -55,12 +55,17 @@ def _parse_line(line: str) -> Optional[StackFrame]:
     Supports multiple formats:
     - Node.js: "at functionName (/path/to/file.js:123:45)"
     - Node.js: "at /path/to/file.js:123:45"
+    - Node.js: "at C:\\path\\to\\file.js:123:45" (Windows absolute paths)
     - Python: 'File "/path/to/file.py", line 123, in function_name'
     - Python: '  File "/path/to/file.py", line 123'
     - Java: "at com.example.Class.method(Class.java:123)"
     """
-    # Node.js format: "at functionName (/path/to/file.js:123:45)"
-    node_pattern = r'at\s+(?:\w+\.?\w*)?\s*\(([^:]+):(\d+):(\d+)\)'
+    # Node.js format with function: "at functionName (/path/to/file.js:123:45)"
+    # or "at Route.dispatch (C:\\path\\to\\file.js:119:3)"
+    # Pattern: at [optional function] (path:line:col)
+    # The path can contain spaces, backslashes, forward slashes, etc.
+    # We need to capture the path before the ":digits:digits)" sequence
+    node_pattern = r'at\s+(?:[\w.]+(?:\s+[\w.]+)?\s+)?\((.+?):(\d+):(\d+)\)'
     match = re.search(node_pattern, line)
     if match:
         file_path = match.group(1).strip()
@@ -72,7 +77,12 @@ def _parse_line(line: str) -> Optional[StackFrame]:
         )
     
     # Node.js format without function: "at /path/to/file.js:123:45"
-    node_pattern2 = r'at\s+([^:]+):(\d+):(\d+)'
+    # or "at C:\\path\\to\\file.js:123:45" (Windows absolute paths)
+    # Pattern: at path:line:col
+    # Match: "at " followed by path (can have spaces, backslashes, forward slashes)
+    # followed by ":digits:digits"
+    # Use a pattern that captures everything between "at " and the first ":digits:digits"
+    node_pattern2 = r'at\s+(.+?):(\d+):(\d+)(?:\s|$)'
     match = re.search(node_pattern2, line)
     if match:
         file_path = match.group(1).strip()
@@ -109,7 +119,9 @@ def _parse_line(line: str) -> Optional[StackFrame]:
     
     # Generic pattern: look for file paths with line numbers
     # Format: "/path/to/file.ext:123" or "file.ext:123"
-    generic_pattern = r'([/\w\-_.]+\.(?:js|py|java|ts|tsx|jsx|go|rs|rb|php)):(\d+)'
+    # This is a fallback and should be more permissive
+    # Match any path-like string ending with a file extension followed by :digits
+    generic_pattern = r'((?:[A-Za-z]:)?[^\s:]+\.(?:js|py|java|ts|tsx|jsx|go|rs|rb|php)):(\d+)'
     match = re.search(generic_pattern, line)
     if match:
         file_path = match.group(1).strip()
@@ -134,6 +146,10 @@ def get_relevant_files(
     1. Top-most frame (error origin)
     2. Subsequent frames (call chain)
     
+    Filters out:
+    - node_modules paths (dependencies)
+    - Internal library files
+    
     Args:
         stack_frames: List of parsed stack frames
         max_files: Maximum number of files to return
@@ -144,11 +160,63 @@ def get_relevant_files(
     if not stack_frames:
         return []
     
-    # Remove duplicates while preserving order
+    # Filter out dependency directories and build artifacts
+    # IMPORTANT: Check the ORIGINAL path before any normalization
+    # Language-specific dependency directories:
+    excluded_patterns = [
+        # Node.js
+        'node_modules',
+        '.next',
+        '.nuxt',
+        # Python
+        'venv',
+        'env',
+        '.venv',
+        '__pycache__',
+        'site-packages',  # Python packages in virtual environments
+        '.pytest_cache',
+        # Java
+        'target',
+        '.gradle',
+        # Build artifacts (common across languages)
+        'dist',
+        'build',
+        '.build',
+        'out',
+        'bin',
+        'obj',
+        # IDE and system files
+        '.idea',
+        '.vscode',
+        '.git',
+    ]
+    
+    # Remove duplicates while preserving order, and filter excluded paths
+    import logging
+    logger = logging.getLogger(__name__)
+    
     seen_paths = set()
     unique_frames = []
     
     for frame in stack_frames:
+        # Use the ORIGINAL file_path (before normalization) for filtering
+        # This ensures we catch node_modules even if path normalization would remove it
+
+        
+        original_path_lower = frame.file_path.lower().replace('\\', '/')
+        
+        # CRITICAL: Always filter out anything from node_modules
+        # This is the most important filter for Node.js projects
+        if 'node_modules' in original_path_lower:
+            logger.debug(f"Filtered out {frame.file_path} (contains node_modules)")
+            continue
+        
+        # Skip if path contains other excluded patterns (case-insensitive)
+        if any(pattern in original_path_lower for pattern in excluded_patterns):
+            logger.debug(f"Filtered out {frame.file_path} (contains excluded pattern)")
+            continue
+        
+        # Skip if already seen
         if frame.file_path not in seen_paths:
             seen_paths.add(frame.file_path)
             unique_frames.append(frame)

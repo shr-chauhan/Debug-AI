@@ -14,6 +14,7 @@ import requests
 from requests.exceptions import Timeout, RequestException
 from typing import Optional, Dict, List
 from dataclasses import dataclass
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class GitFetcher:
             if repo_config.provider == "github":
                 self.session.headers.update({
                     "Authorization": f"token {repo_config.access_token}",
-                    "Accept": "application/vnd.github.v3.raw"
+                    "Accept": "application/vnd.github.v3+json"  # JSON response for Contents API
                 })
             elif repo_config.provider == "gitlab":
                 self.session.headers.update({
@@ -98,26 +99,50 @@ class GitFetcher:
         
         # GitHub API: Get file content
         # https://docs.github.com/en/rest/repos/contents#get-repository-content
-        url = f"https://api.github.com/repos/{self.config.owner}/{self.config.repo}/contents/{file_path}"
+        # URL encode the file path to handle special characters and spaces
+        encoded_path = quote(file_path, safe='/')
+        url = f"https://api.github.com/repos/{self.config.owner}/{self.config.repo}/contents/{encoded_path}"
+        print('url',url)
         params = {"ref": ref}
         
         response = self.session.get(url, params=params, timeout=self.timeout)
-        
         if response.status_code == 404:
             logger.warning(f"File not found: {file_path}")
             return None
         
         response.raise_for_status()
         
+        # Check if response has content
+        if not response.text or not response.text.strip():
+            logger.warning(f"Empty response from GitHub API for {file_path}")
+            return None
+        
+        # Check content type
+        content_type = response.headers.get('Content-Type', '').lower()
+        if 'application/json' not in content_type:
+            logger.warning(
+                f"Unexpected content type from GitHub API for {file_path}: {content_type}. "
+                f"Response preview: {response.text[:200]}"
+            )
+            return None
+        
         # GitHub returns base64-encoded content
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as e:
+            logger.warning(
+                f"Failed to parse JSON response from GitHub for {file_path}: {e}. "
+                f"Response preview: {response.text[:200]}"
+            )
+            return None
+        
+       
         if "content" not in data:
             logger.warning(f"No content in GitHub response for {file_path}")
             return None
         
         import base64
         content = base64.b64decode(data["content"]).decode("utf-8")
-        
         return {
             "content": content,
             "file_path": file_path,
@@ -173,6 +198,8 @@ class GitFetcher:
             return None
         
         content = file_data["content"]
+        print('content',content)
+        print('line_number',line_number)
         
         # If no line number specified, return full file
         if line_number is None:
@@ -185,6 +212,7 @@ class GitFetcher:
         
         # Extract lines around the target line
         lines = content.splitlines()
+        print('lines',lines)
         total_lines = len(lines)
         
         # Calculate line range (1-indexed)
@@ -194,7 +222,7 @@ class GitFetcher:
         # Extract relevant lines (convert to 0-indexed for slicing)
         relevant_lines = lines[start_line - 1:end_line]
         relevant_content = "\n".join(relevant_lines)
-        
+        print('relevant_content',relevant_content)
         return {
             "content": relevant_content,
             "file_path": file_path,
@@ -216,11 +244,14 @@ class GitFetcher:
         - Local project paths
         - Build artifacts (dist/, build/, node_modules/)
         - Path prefix removal
+        - Repo name-based path mapping (if repo name is in config)
         
         Args:
             file_path: File path from stack trace (may be absolute or relative)
-            repo_config: Optional repository configuration dict that may contain
-                        path mapping hints (e.g., {"root_dir": "src"})
+            repo_config: Optional repository configuration dict that may contain:
+                        - "repo": Repository name (used to find repo root in path)
+                        - "root_dir": Explicit root directory (e.g., "src")
+                        - "root_hints": Array of possible root directory names
             
         Returns:
             Normalized repository-relative path
@@ -230,6 +261,21 @@ class GitFetcher:
         
         # Remove leading/trailing whitespace
         file_path = file_path.strip()
+        
+        # Step 0: Use repo name to find repo root in absolute paths
+        # This is more accurate than guessing based on common patterns
+        if repo_config:
+            repo_name = repo_config.get("repo")
+            if repo_name:
+                # Try to find the repo name in the path and normalize from there
+                # Example: "C:\Projects\MyRepo\src\file.js" -> "src/file.js" (if repo="MyRepo")
+                normalized = GitFetcher._normalize_using_repo_name(file_path, repo_name)
+                if normalized != file_path:  # If we successfully normalized using repo name
+                    # Clean up the result
+                    normalized = normalized.replace('\\', '/').lstrip('/')
+                    # Remove excluded dirs
+                    normalized = GitFetcher._remove_excluded_dirs(normalized)
+                    return normalized
         
         # Extract repo root hints from config if available
         repo_root_hints = None
@@ -259,6 +305,49 @@ class GitFetcher:
         normalized = GitFetcher._remove_excluded_dirs(normalized)
         
         return normalized
+    
+    @staticmethod
+    def _normalize_using_repo_name(file_path: str, repo_name: str) -> str:
+        """
+        Normalize path by finding the repo name in the path and extracting everything after it.
+        
+        Example:
+            Input: "C:\\Projects\\Debug-AI\\example\\index.js", repo_name="Debug-AI"
+            Output: "example\\index.js"
+        
+        Args:
+            file_path: Original file path (may be absolute)
+            repo_name: Repository name to search for in the path
+            
+        Returns:
+            Normalized path relative to repo root, or original path if repo name not found
+        """
+        if not repo_name or not file_path:
+            return file_path
+        
+        # Normalize path separators for easier matching
+        path_normalized = file_path.replace('\\', '/')
+        repo_name_normalized = repo_name.replace('\\', '/')
+        
+        # Case-insensitive search for repo name
+        path_lower = path_normalized.lower()
+        repo_lower = repo_name_normalized.lower()
+        
+        # Find repo name in path
+        idx = path_lower.find(repo_lower)
+        if idx == -1:
+            # Repo name not found, return original
+            return file_path
+        
+        # Extract everything after the repo name
+        # Add length of repo name to get past it
+        after_repo = path_normalized[idx + len(repo_name_normalized):]
+        
+        # Remove leading slashes and path separators
+        after_repo = after_repo.lstrip('/').lstrip('\\')
+        
+        # If we got something, return it; otherwise return original
+        return after_repo if after_repo else file_path
     
     @staticmethod
     def _remove_absolute_prefix(file_path: str) -> str:
