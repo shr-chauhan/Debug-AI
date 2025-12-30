@@ -13,7 +13,11 @@ from app.utils.crud import (
     get_error_event_by_id,
     get_error_events,
     get_error_analysis_by_event_id,
-    get_error_analyses
+    get_error_analyses,
+    create_project,
+    get_project_by_id,
+    get_projects,
+    get_project_error_count
 )
 from app.celery import analyze_error_event
 
@@ -302,6 +306,93 @@ async def list_error_analyses(
     except Exception as e:
         logger.exception("Failed to fetch error analyses")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.post("/api/v1/projects", response_model=schemas.ProjectResponse)
+async def create_project_endpoint(
+    project: schemas.ProjectCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new project.
+    """
+    try:
+        db_project = create_project(db, project)
+        
+        # Get error count
+        error_count = get_project_error_count(db, db_project.id)
+        
+        return schemas.ProjectResponse(
+            id=db_project.id,
+            project_key=db_project.project_key,
+            name=db_project.name,
+            repo_config=db_project.repo_config,
+            created_at=db_project.created_at,
+            error_count=error_count
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Failed to create project")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/v1/projects", response_model=schemas.ProjectListResponse)
+async def list_projects(
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of projects to return"),
+    offset: int = Query(0, ge=0, description="Number of projects to skip"),
+    db: Session = Depends(get_db)
+):
+    """
+    List all projects with pagination.
+    """
+    try:
+        projects, total = get_projects(db, limit=limit, offset=offset)
+        
+        # Get error counts for each project
+        project_responses = []
+        for project in projects:
+            error_count = get_project_error_count(db, project.id)
+            project_responses.append(schemas.ProjectResponse(
+                id=project.id,
+                project_key=project.project_key,
+                name=project.name,
+                repo_config=project.repo_config,
+                created_at=project.created_at,
+                error_count=error_count
+            ))
+        
+        return schemas.ProjectListResponse(
+            projects=project_responses,
+            total=total
+        )
+    except Exception as e:
+        logger.exception("Failed to fetch projects")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/api/v1/projects/{project_id}", response_model=schemas.ProjectResponse)
+async def get_project(
+    project_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific project by ID.
+    """
+    project = get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    
+    error_count = get_project_error_count(db, project_id)
+    
+    return schemas.ProjectResponse(
+        id=project.id,
+        project_key=project.project_key,
+        name=project.name,
+        repo_config=project.repo_config,
+        created_at=project.created_at,
+        error_count=error_count
+    )
 
 
 if __name__ == "__main__":

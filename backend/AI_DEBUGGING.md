@@ -39,13 +39,26 @@ OPENAI_MODEL=gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
 
 ### 3. Configure Repository Access (Optional)
 
-For fetching source code from private repositories, add:
+For fetching source code from private repositories, configure tokens:
 
+**Default token (fallback):**
 ```env
 GITHUB_TOKEN=your_github_personal_access_token_here
 ```
 
-Or configure per-project (see below).
+**Project-specific tokens (recommended for multiple projects):**
+```env
+# Pattern: {PROJECT_KEY}_TOKEN
+# Example: If project_key is "debug-ai", use DEBUG_AI_TOKEN
+DEBUG_AI_TOKEN=ghp_token_for_debug_ai_project
+MY_APP_TOKEN=ghp_token_for_my_app_project
+PRODUCTION_API_TOKEN=ghp_token_for_production_api
+```
+
+**Token lookup order:**
+1. Token explicitly set in `repo_config.access_token` (if provided)
+2. `{PROJECT_KEY}_TOKEN` environment variable (project-specific)
+3. `GITHUB_TOKEN` environment variable (fallback)
 
 ### 4. Run Database Migration
 
@@ -101,7 +114,19 @@ SET repo_config = '{
 WHERE project_key = 'my-project';
 ```
 
-**Note:** If `access_token` is not provided in `repo_config`, the system will use the `GITHUB_TOKEN` environment variable.
+**Token Configuration:**
+
+The system uses the following token lookup order:
+1. **Explicit token** in `repo_config.access_token` (if provided)
+2. **Project-specific token**: `{PROJECT_KEY}_TOKEN` environment variable
+   - Example: For project_key `"debug-ai"`, looks for `DEBUG_AI_TOKEN`
+   - Converts project key to uppercase and replaces hyphens with underscores
+3. **Fallback token**: `GITHUB_TOKEN` environment variable
+
+**Example:**
+- Project key: `"my-web-app"`
+- System looks for: `MY_WEB_APP_TOKEN` environment variable
+- If not found, falls back to: `GITHUB_TOKEN`
 
 ## How It Works
 

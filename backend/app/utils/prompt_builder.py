@@ -28,7 +28,6 @@ def build_debugging_prompt(
     """
     # Limit total code lines
     limited_context = _limit_code_context(source_code_context, max_total_lines)
-    print('limited_context', limited_context)
     prompt_parts = []
     
     # System instruction

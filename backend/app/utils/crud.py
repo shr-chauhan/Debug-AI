@@ -155,3 +155,69 @@ def get_error_analyses(
     
     return analyses, total
 
+
+def create_project(db: Session, project_data: schemas.ProjectCreate) -> models.Project:
+    """Create a new project with optional repository configuration"""
+    # Build repo_config only if both owner and repo are provided
+    # If not provided, repo_config will be None and AI analysis will use stack trace only
+    repo_config = None
+    if project_data.repo_owner and project_data.repo_name:
+        repo_config = {
+            "provider": project_data.repo_provider or "github",
+            "owner": project_data.repo_owner,
+            "repo": project_data.repo_name,
+            "branch": project_data.branch or "main"
+        }
+    
+    project = models.Project(
+        project_key=project_data.project_key,
+        name=project_data.name,
+        repo_config=repo_config
+    )
+    
+    try:
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        return project
+    except IntegrityError:
+        db.rollback()
+        raise ValueError(f"Project with key '{project_data.project_key}' already exists")
+
+
+def get_project_by_id(db: Session, project_id: int) -> Optional[models.Project]:
+    """Get a project by ID"""
+    return db.query(models.Project).filter(models.Project.id == project_id).first()
+
+
+def get_project_by_key(db: Session, project_key: str) -> Optional[models.Project]:
+    """Get a project by project_key"""
+    return db.query(models.Project).filter(models.Project.project_key == project_key).first()
+
+
+def get_projects(
+    db: Session,
+    limit: int = 100,
+    offset: int = 0
+) -> Tuple[List[models.Project], int]:
+    """
+    Get all projects with pagination.
+    
+    Returns:
+        Tuple of (list of projects, total count)
+    """
+    query = db.query(models.Project)
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination and ordering
+    projects = query.order_by(models.Project.created_at.desc()).offset(offset).limit(limit).all()
+    
+    return projects, total
+
+
+def get_project_error_count(db: Session, project_id: int) -> int:
+    """Get the count of error events for a project"""
+    return db.query(models.ErrorEvent).filter(models.ErrorEvent.project_id == project_id).count()
+

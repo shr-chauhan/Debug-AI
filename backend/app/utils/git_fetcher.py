@@ -102,7 +102,6 @@ class GitFetcher:
         # URL encode the file path to handle special characters and spaces
         encoded_path = quote(file_path, safe='/')
         url = f"https://api.github.com/repos/{self.config.owner}/{self.config.repo}/contents/{encoded_path}"
-        print('url',url)
         params = {"ref": ref}
         
         response = self.session.get(url, params=params, timeout=self.timeout)
@@ -198,8 +197,6 @@ class GitFetcher:
             return None
         
         content = file_data["content"]
-        print('content',content)
-        print('line_number',line_number)
         
         # If no line number specified, return full file
         if line_number is None:
@@ -212,7 +209,6 @@ class GitFetcher:
         
         # Extract lines around the target line
         lines = content.splitlines()
-        print('lines',lines)
         total_lines = len(lines)
         
         # Calculate line range (1-indexed)
@@ -222,7 +218,6 @@ class GitFetcher:
         # Extract relevant lines (convert to 0-indexed for slicing)
         relevant_lines = lines[start_line - 1:end_line]
         relevant_content = "\n".join(relevant_lines)
-        print('relevant_content',relevant_content)
         return {
             "content": relevant_content,
             "file_path": file_path,

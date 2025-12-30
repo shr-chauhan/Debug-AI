@@ -119,11 +119,14 @@ def perform_ai_analysis(
     logger.info(f"Parsed {len(stack_frames)} stack frames, selected {len(relevant_frames)} relevant files")
     
     # Step 2: Fetch source code from Git (if repo config available)
+    # Note: If repo_config_dict is None or empty, analysis will proceed using only stack trace
     # With timeout protection and early exit
     source_code_context = []
     if repo_config_dict and relevant_frames:
         try:
-            repo_config = _create_repo_config(repo_config_dict)
+            # Get project key for token lookup
+            project_key = error_event.project.project_key
+            repo_config = _create_repo_config(repo_config_dict, project_key)
             fetcher = GitFetcher(repo_config, timeout=GIT_FETCH_TIMEOUT_PER_FILE)
             
             fetch_start_time = time.time()
@@ -175,7 +178,6 @@ def perform_ai_analysis(
             # Continue without source code context
     
     # Step 3: Build structured prompt
-    print('source code context',source_code_context)
     prompt = build_debugging_prompt(
         error_message=error_message,
         stack_trace=error_stack,
@@ -197,15 +199,45 @@ def perform_ai_analysis(
         }
 
 
-def _create_repo_config(repo_config_dict: Dict) -> RepoConfig:
-    """Create RepoConfig from dictionary."""
+def _create_repo_config(repo_config_dict: Dict, project_key: str) -> RepoConfig:
+    """
+    Create RepoConfig from dictionary with project-key-based token lookup.
+    
+    Token lookup order:
+    1. access_token from repo_config_dict (if explicitly provided)
+    2. {PROJECT_KEY}_TOKEN environment variable (project-specific)
+    3. GITHUB_TOKEN environment variable (fallback)
+    
+    Args:
+        repo_config_dict: Repository configuration dictionary
+        project_key: Project key for token lookup (e.g., "debug-ai" -> "DEBUG_AI_TOKEN")
+        
+    Returns:
+        RepoConfig instance
+    """
+    # Token lookup: project-specific token first, then fallback
+    access_token = None
+    
+    # 1. Check if token is explicitly provided in repo_config
+    if repo_config_dict.get("access_token"):
+        access_token = repo_config_dict.get("access_token")
+    else:
+        # 2. Look up project-specific token: {PROJECT_KEY}_TOKEN
+        # Convert project_key to env var format: "debug-ai" -> "DEBUG_AI_TOKEN"
+        env_var_name = f"{project_key.upper().replace('-', '_')}_TOKEN"
+        access_token = os.getenv(env_var_name)
+        
+        # 3. Fallback to default GITHUB_TOKEN if project-specific not found
+        if not access_token:
+            access_token = os.getenv("GITHUB_TOKEN")
+    
     return RepoConfig(
         owner=repo_config_dict["owner"],
         repo=repo_config_dict["repo"],
         branch=repo_config_dict.get("branch"),
         commit_sha=repo_config_dict.get("commit_sha"),
         provider=repo_config_dict.get("provider", "github"),
-        access_token=repo_config_dict.get("access_token") or os.getenv("GITHUB_TOKEN")
+        access_token=access_token
     )
 
 

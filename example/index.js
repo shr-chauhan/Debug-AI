@@ -3,7 +3,7 @@ const express = require('express');
 const { errorIngestionMiddleware } = require('@error-ingestion/sdk-node');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3001;
 
 // Parse JSON bodies
 app.use(express.json());

@@ -100,3 +100,30 @@ class ErrorEventWithAnalysis(BaseModel):
     event: ErrorEventDetail
     analysis: Optional[ErrorAnalysisResponse] = None
 
+
+# Project management schemas
+class ProjectCreate(BaseModel):
+    name: str = Field(..., description="Project name")
+    project_key: str = Field(..., description="Project key (unique identifier)")
+    repo_provider: Optional[str] = Field("github", description="Repository provider (github, gitlab)")
+    repo_owner: Optional[str] = Field(None, description="Repository owner/username")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branch: Optional[str] = Field("main", description="Repository branch")
+
+
+class ProjectResponse(BaseModel):
+    id: int
+    project_key: str
+    name: str
+    repo_config: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    error_count: Optional[int] = 0  # Will be populated by query
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectListResponse(BaseModel):
+    projects: List[ProjectResponse]
+    total: int
+
