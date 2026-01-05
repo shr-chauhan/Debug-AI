@@ -20,7 +20,7 @@ export default async function LoginPage({
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full space-y-8 p-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Debug AI</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Stackwise</h1>
           <p className="mt-2 text-gray-600">AI-powered error debugging platform</p>
         </div>
         

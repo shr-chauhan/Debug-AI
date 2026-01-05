@@ -218,7 +218,7 @@ def _create_repo_config(repo_config_dict: Dict, project_key: str) -> RepoConfig:
     
     Args:
         repo_config_dict: Repository configuration dictionary
-        project_key: Project key for token lookup (e.g., "debug-ai" -> "DEBUG_AI_TOKEN")
+        project_key: Project key for token lookup (e.g., "stackwise" -> "STACKWISE_TOKEN")
         
     Returns:
         RepoConfig instance
@@ -231,7 +231,7 @@ def _create_repo_config(repo_config_dict: Dict, project_key: str) -> RepoConfig:
         access_token = repo_config_dict.get("access_token")
     else:
         # 2. Look up project-specific token: {PROJECT_KEY}_TOKEN
-        # Convert project_key to env var format: "debug-ai" -> "DEBUG_AI_TOKEN"
+        # Convert project_key to env var format: "stackwise" -> "STACKWISE_TOKEN"
         env_var_name = f"{project_key.upper().replace('-', '_')}_TOKEN"
         access_token = os.getenv(env_var_name)
         
@@ -261,6 +261,7 @@ def _call_llm(prompt: str) -> dict:
     """
     try:
         import openai
+        from openai import OpenAIError, APIError, APIConnectionError, RateLimitError, AuthenticationError
     except ImportError:
         logger.error("openai package not installed. Install with: pip install openai")
         raise ImportError("openai package required for LLM analysis")
@@ -277,33 +278,68 @@ def _call_llm(prompt: str) -> dict:
     # Get model from environment (default to gpt-4o-mini)
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     
-    # Call OpenAI API
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are an expert debugging assistant. Provide clear, actionable analysis based only on the provided context."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.1,  # Very low temperature for precise, deterministic analysis without corrections
-        max_tokens=2000  # Limit response length
-    )
+    # Log prompt length for debugging
+    prompt_length = len(prompt)
+    logger.info(f"Calling OpenAI API with model={model}, prompt_length={prompt_length} chars")
     
-    analysis_text = response.choices[0].message.content.strip()
-    model_name = response.model
+    try:
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert debugging assistant. Provide clear, actionable analysis based only on the provided context."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.1,  # Very low temperature for precise, deterministic analysis without corrections
+            max_tokens=2000  # Limit response length
+        )
+        
+        analysis_text = response.choices[0].message.content.strip()
+        model_name = response.model
+        
+        # Determine confidence based on whether we have source code context
+        # This is a simple heuristic - could be improved
+        confidence = "high" if "SOURCE CODE CONTEXT" in prompt and "(No source code context available)" not in prompt else "medium"
+        
+        logger.info(f"OpenAI API call successful. Model: {model_name}, Response length: {len(analysis_text)} chars")
+        
+        return {
+            "analysis": analysis_text,
+            "model": model_name,
+            "confidence": confidence
+        }
     
-    # Determine confidence based on whether we have source code context
-    # This is a simple heuristic - could be improved
-    confidence = "high" if "SOURCE CODE CONTEXT" in prompt and "(No source code context available)" not in prompt else "medium"
+    except AuthenticationError as e:
+        logger.error(f"OpenAI Authentication Error: {e}. Check your OPENAI_API_KEY environment variable.")
+        raise ValueError(f"Invalid OpenAI API key: {e}")
     
-    return {
-        "analysis": analysis_text,
-        "model": model_name,
-        "confidence": confidence
-    }
+    except RateLimitError as e:
+        logger.error(f"OpenAI Rate Limit Error: {e}. You may have exceeded your API rate limit or quota.")
+        raise ValueError(f"OpenAI rate limit exceeded: {e}")
+    
+    except APIConnectionError as e:
+        logger.error(f"OpenAI API Connection Error: {e}. Check your internet connection.")
+        raise ConnectionError(f"Failed to connect to OpenAI API: {e}")
+    
+    except APIError as e:
+        # This catches 500 errors and other API errors
+        error_message = str(e)
+        error_type = getattr(e, 'type', 'unknown')
+        error_code = getattr(e, 'code', 'unknown')
+        logger.error(
+            f"OpenAI API Error (HTTP {getattr(e, 'status_code', 'unknown')}): "
+            f"type={error_type}, code={error_code}, message={error_message}"
+        )
+        raise ValueError(f"OpenAI API error ({error_type}): {error_message}")
+    
+    except OpenAIError as e:
+        # Catch-all for other OpenAI errors
+        logger.error(f"OpenAI Error: {e}", exc_info=True)
+        raise ValueError(f"OpenAI error: {e}")
 

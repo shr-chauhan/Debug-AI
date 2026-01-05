@@ -5,7 +5,7 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
 // Token storage key
-const API_TOKEN_KEY = 'debug_ai_api_token';
+const API_TOKEN_KEY = 'stackwise_api_token';
 
 export interface ApiError {
   detail: string;

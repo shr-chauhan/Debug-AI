@@ -307,7 +307,7 @@ class GitFetcher:
         Normalize path by finding the repo name in the path and extracting everything after it.
         
         Example:
-            Input: "C:\\Projects\\Debug-AI\\example\\index.js", repo_name="Debug-AI"
+            Input: "C:\\Projects\\Stackwise\\example\\index.js", repo_name="Stackwise"
             Output: "example\\index.js"
         
         Args:

@@ -49,8 +49,8 @@ GITHUB_TOKEN=your_github_personal_access_token_here
 **Project-specific tokens (recommended for multiple projects):**
 ```env
 # Pattern: {PROJECT_KEY}_TOKEN
-# Example: If project_key is "debug-ai", use DEBUG_AI_TOKEN
-DEBUG_AI_TOKEN=ghp_token_for_debug_ai_project
+# Example: If project_key is "stackwise", use STACKWISE_TOKEN
+STACKWISE_TOKEN=ghp_token_for_stackwise_project
 MY_APP_TOKEN=ghp_token_for_my_app_project
 PRODUCTION_API_TOKEN=ghp_token_for_production_api
 ```
@@ -119,7 +119,7 @@ WHERE project_key = 'my-project';
 The system uses the following token lookup order:
 1. **Explicit token** in `repo_config.access_token` (if provided)
 2. **Project-specific token**: `{PROJECT_KEY}_TOKEN` environment variable
-   - Example: For project_key `"debug-ai"`, looks for `DEBUG_AI_TOKEN`
+   - Example: For project_key `"stackwise"`, looks for `STACKWISE_TOKEN`
    - Converts project key to uppercase and replaces hyphens with underscores
 3. **Fallback token**: `GITHUB_TOKEN` environment variable
 

@@ -10,9 +10,9 @@ export function SdkSetup({ projectKey }: SdkSetupProps) {
   const [activeTab, setActiveTab] = useState<"npm" | "yarn" | "pnpm">("npm");
 
   const installCommands = {
-    npm: `npm install @your-org/debug-ai-sdk`,
-    yarn: `yarn add @your-org/debug-ai-sdk`,
-    pnpm: `pnpm add @your-org/debug-ai-sdk`,
+    npm: `npm install @your-org/stackwise-sdk`,
+    yarn: `yarn add @your-org/stackwise-sdk`,
+    pnpm: `pnpm add @your-org/stackwise-sdk`,
   };
 
   const apiUrl = typeof window !== 'undefined' 
@@ -20,18 +20,18 @@ export function SdkSetup({ projectKey }: SdkSetupProps) {
     : 'http://localhost:8000';
 
   const expressExample = `const express = require('express');
-const { DebugAI } = require('@your-org/debug-ai-sdk');
+const { Stackwise } = require('@your-org/stackwise-sdk');
 
 const app = express();
-const debugAI = new DebugAI({
+const stackwise = new Stackwise({
   apiUrl: '${apiUrl}',
   projectKey: '${projectKey}',
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  // Send error to Debug AI
-  debugAI.captureError(err, {
+  // Send error to Stackwise
+  stackwise.captureError(err, {
     method: req.method,
     path: req.path,
     statusCode: res.statusCode,

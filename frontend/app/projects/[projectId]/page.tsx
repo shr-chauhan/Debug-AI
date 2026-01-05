@@ -30,7 +30,7 @@ export default function ProjectDetailPage() {
       try {
         // Wait a bit for token to be available
         await new Promise<void>((resolve) => {
-          const token = localStorage.getItem('debug_ai_api_token');
+          const token = localStorage.getItem('stackwise_api_token');
           if (token) {
             resolve();
             return;

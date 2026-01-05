@@ -1,4 +1,4 @@
-# Debug AI Dashboard
+# Stackwise Dashboard
 
 Developer-facing dashboard for the AI-powered error debugging platform.
 

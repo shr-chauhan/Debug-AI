@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Debug AI - Error Debugging Platform",
+  title: "Stackwise - Error Debugging Platform",
   description: "AI-powered error debugging platform for developers",
 };
 

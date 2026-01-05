@@ -26,7 +26,7 @@
    - Go to https://github.com/settings/developers
    - Click "New OAuth App"
    - Fill in:
-     - **Application name**: Debug AI (or your choice)
+     - **Application name**: Stackwise (or your choice)
      - **Homepage URL**: http://localhost:3000
      - **Authorization callback URL**: http://localhost:3000/api/auth/callback/github
    - Click "Register application"

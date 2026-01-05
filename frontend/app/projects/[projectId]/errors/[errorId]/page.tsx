@@ -36,7 +36,7 @@ export default function ErrorDetailPage() {
       try {
         // Wait for token
         await new Promise<void>((resolve) => {
-          const token = localStorage.getItem('debug_ai_api_token');
+          const token = localStorage.getItem('stackwise_api_token');
           if (token) {
             resolve();
             return;
