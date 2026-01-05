@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { api, getApiToken } from "@/lib/api";
 
 /**
@@ -8,40 +8,59 @@ import { api, getApiToken } from "@/lib/api";
  * This runs on the client side to avoid server-side network issues
  * 
  * Gets session data from NextAuth API route and syncs with backend
+ * 
+ * Optimization: Only syncs when:
+ * 1. No token exists (first login)
+ * 2. Token is invalid (401/403 error)
+ * 3. Not on every page mount/navigation
  */
 export function UserSync() {
-  const [synced, setSynced] = useState(false);
+  const hasSyncedRef = useRef(false);
+  const isSyncingRef = useRef(false);
 
   useEffect(() => {
     const performSync = async () => {
-      // Fetch session from NextAuth API route
+      // Prevent multiple simultaneous syncs
+      if (isSyncingRef.current) {
+        return;
+      }
+
+      isSyncingRef.current = true;
+
       try {
+        // Check if we already have a valid token
+        const existingToken = getApiToken();
+        if (existingToken && hasSyncedRef.current) {
+          // Token exists and we've already synced in this session
+          isSyncingRef.current = false;
+          return;
+        }
+
+        // Fetch session from NextAuth API route
         const res = await fetch('/api/auth/session');
-        console.log('UserSync: Session response status:', res.status);
+        
+        if (!res.ok) {
+          console.error('UserSync: Failed to fetch session, status:', res.status);
+          isSyncingRef.current = false;
+          return;
+        }
+        
         const session = await res.json();
-        console.log('UserSync: Full session data:', JSON.stringify(session, null, 2));
         
         if (session?.user) {
-          // Check what fields are available
-          console.log('UserSync: User object:', {
-            id: session.user.id,
-            username: session.user.username,
-            name: session.user.name,
-            email: session.user.email,
-            image: session.user.image
-          });
-          
           // Ensure we have required fields - github_id should be in user.id
           const githubId = session.user.id;
           const username = session.user.username || session.user.name || 'unknown';
           
           if (!githubId) {
-            console.error('UserSync: Missing github_id (user.id):', session.user);
+            console.error('UserSync: Missing github_id (user.id)');
+            isSyncingRef.current = false;
             return;
           }
           
           if (!username || username === 'unknown') {
-            console.error('UserSync: Missing username:', session.user);
+            console.error('UserSync: Missing username');
+            isSyncingRef.current = false;
             return;
           }
           
@@ -54,51 +73,47 @@ export function UserSync() {
             avatar_url: session.user.image ? String(session.user.image).trim() : null,
           };
           
-          console.log('UserSync: Sending user data to backend:', userData);
-          
           try {
-            const user = await api.syncUser(userData);
-            console.log('UserSync: ✅ Successfully synced user, token stored');
+            await api.syncUser(userData);
+            hasSyncedRef.current = true;
             // Dispatch custom event when sync completes
             window.dispatchEvent(new CustomEvent('user-synced'));
           } catch (error) {
-            console.error("UserSync: ❌ Failed to sync user:", error);
+            console.error("UserSync: Failed to sync user:", error);
           }
-        } else {
-          console.log('UserSync: No user in session');
         }
       } catch (error) {
         console.error('UserSync: Failed to fetch session:', error);
+      } finally {
+        isSyncingRef.current = false;
       }
     };
 
-    // Check if we already have a token (but don't skip sync if token is invalid)
-    const existingToken = getApiToken();
-    if (existingToken && synced) {
-      // Token exists and we've already synced, skip
-      return;
-    }
-
-    // Listen for token-invalid event (triggered when API returns 401)
+    // Listen for token-invalid event (triggered when API returns 401/403)
     const handleTokenInvalid = () => {
-      console.log('UserSync: Token invalid event received, forcing re-sync');
-      setSynced(false); // Reset synced flag to allow re-sync
-      performSync();
+      // Only re-sync if we had a token (meaning it was invalid, not missing)
+      const hadToken = getApiToken() !== null;
+      if (hadToken) {
+        hasSyncedRef.current = false; // Reset to allow re-sync
+        performSync();
+      }
     };
 
     window.addEventListener('token-invalid', handleTokenInvalid);
 
-    // Perform initial sync if not already synced
-    if (!synced) {
-      performSync().then(() => {
-        setSynced(true);
-      });
+    // Only sync on mount if no token exists (first login scenario)
+    const existingToken = getApiToken();
+    if (!existingToken && !hasSyncedRef.current) {
+      performSync();
+    } else {
+      // Token exists, mark as synced to prevent unnecessary syncs
+      hasSyncedRef.current = true;
     }
 
     return () => {
       window.removeEventListener('token-invalid', handleTokenInvalid);
     };
-  }, [synced]);
+  }, []); // Empty dependency array - only run once on mount
 
   // This component doesn't render anything
   return null;

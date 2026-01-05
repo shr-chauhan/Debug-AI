@@ -5,7 +5,7 @@ import { api, ErrorEventWithAnalysis } from "@/lib/api";
 import { Badge } from "@/components/Badge";
 import Link from "next/link";
 import { UserSync } from "@/components/UserSync";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 
 export default function ErrorDetailPage() {
@@ -17,6 +17,7 @@ export default function ErrorDetailPage() {
   const [errorData, setErrorData] = useState<ErrorEventWithAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const hasFetchedRef = useRef(false);
 
   useEffect(() => {
     if (isNaN(errorIdNum)) {
@@ -24,6 +25,12 @@ export default function ErrorDetailPage() {
       setLoading(false);
       return;
     }
+
+    // Prevent duplicate calls (React Strict Mode in dev runs effects twice)
+    if (hasFetchedRef.current) {
+      return;
+    }
+    hasFetchedRef.current = true;
 
     const fetchData = async () => {
       try {

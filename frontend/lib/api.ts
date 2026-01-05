@@ -57,23 +57,18 @@ async function apiRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  console.log('apiRequest called:', endpoint, 'requireAuth:', requireAuth);
-  
   // Get auth token if required
   const token = requireAuth ? getApiToken() : null;
-  console.log('Token found:', !!token);
   
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   };
   
   // Add Authorization header if token exists
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  
-  console.log('Making fetch request to:', url);
   
   // Create AbortController for timeout (10 seconds)
   const controller = new AbortController();
@@ -86,8 +81,6 @@ async function apiRequest<T>(
       signal: controller.signal,
     });
     
-    console.log('Fetch response received:', response.status, response.statusText);
-    
     clearTimeout(timeoutId);
     
     if (!response.ok) {
@@ -99,25 +92,25 @@ async function apiRequest<T>(
         errorDetail = response.statusText;
       }
       
-      // If we get a 401, the token is invalid - clear it and trigger re-sync
-      if (response.status === 401 && requireAuth && token) {
-        console.warn('401 Unauthorized - clearing invalid token and triggering re-sync');
-        clearApiToken();
-        // Dispatch event to trigger user re-sync
-        window.dispatchEvent(new CustomEvent('token-invalid'));
+      // If we get a 401 or 403, the token is invalid or missing - clear it and trigger re-sync
+      if ((response.status === 401 || response.status === 403) && requireAuth) {
+        // Only trigger re-sync if we had a token (it was invalid, not just missing)
+        if (token) {
+          clearApiToken();
+          // Dispatch event to trigger user re-sync only when token was invalid
+          window.dispatchEvent(new CustomEvent('token-invalid'));
+        }
+        // If no token, don't trigger sync - UserSync will handle it on mount if needed
       }
       
-      // If we get a 403 without a token, it's expected during initial load - don't log as error
-      const isExpectedAuthError = (response.status === 401 || response.status === 403) && !token;
-      
-      if (!isExpectedAuthError) {
+      // Only log non-auth errors
+      const isAuthError = (response.status === 401 || response.status === 403) && requireAuth;
+      if (!isAuthError) {
         console.error(`API request failed: ${response.status} ${response.statusText}`, {
           url,
           status: response.status,
           detail: errorDetail
         });
-      } else {
-        console.log(`API request returned ${response.status} (expected - no token yet)`);
       }
       
       throw new ApiClientError(
@@ -156,6 +149,9 @@ export interface Project {
   id: number;
   project_key: string;
   name: string;
+  language?: string | null;
+  framework?: string | null;
+  description?: string | null;
   repo_config: {
     provider?: string;
     owner?: string;
@@ -169,6 +165,9 @@ export interface Project {
 export interface ProjectCreate {
   name: string;
   project_key: string;
+  language?: string;
+  framework?: string;
+  description?: string;
   repo_provider?: string;
   repo_owner?: string;
   repo_name?: string;
@@ -263,12 +262,15 @@ export const api = {
     }, false); // Don't require auth for user sync
     
     // Store API token
-    setApiToken(user.api_token);
+    if (user.api_token) {
+      setApiToken(user.api_token);
+    } else {
+      console.error('syncUser: No token in user response');
+    }
     
     return user;
   },
 
-  // Projects
   // Projects
   async getProjects(): Promise<ProjectListResponse> {
     return apiRequest<ProjectListResponse>('/api/v1/projects');

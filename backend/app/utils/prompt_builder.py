@@ -12,6 +12,9 @@ def build_debugging_prompt(
     error_message: str,
     stack_trace: str,
     source_code_context: List[Dict[str, any]],
+    project_language: Optional[str] = None,
+    project_framework: Optional[str] = None,
+    project_description: Optional[str] = None,
     max_total_lines: int = 500
 ) -> str:
     """
@@ -21,6 +24,9 @@ def build_debugging_prompt(
         error_message: The error message
         stack_trace: Full stack trace string
         source_code_context: List of dicts with 'file_path', 'content', 'start_line', 'end_line'
+        project_language: Primary programming language of the project
+        project_framework: Framework used in the project
+        project_description: Description/context about the project
         max_total_lines: Maximum total lines of code to include
         
     Returns:
@@ -42,6 +48,25 @@ CRITICAL CONSTRAINTS:
 - Focus on what you can see in the stack trace and source code
 
 """)
+    
+    # Project context section (only include if at least one field is provided and non-empty)
+    context_items = []
+    if project_language and project_language.strip():
+        context_items.append(f"Programming Language: {project_language.strip()}")
+    if project_framework and project_framework.strip():
+        context_items.append(f"Framework: {project_framework.strip()}")
+    if project_description and project_description.strip():
+        context_items.append(f"Project Description: {project_description.strip()}")
+    
+    # Only add PROJECT CONTEXT section if we have at least one item
+    if context_items:
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("PROJECT CONTEXT")
+        prompt_parts.append("=" * 80)
+        prompt_parts.append("\n".join(context_items))
+        prompt_parts.append("")
+        prompt_parts.append("Use this context to provide language and framework-specific insights in your analysis.")
+        prompt_parts.append("")
     
     # Error message section
     prompt_parts.append("=" * 80)

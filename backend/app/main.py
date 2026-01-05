@@ -2,7 +2,7 @@ import logging
 import os
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, List
 from datetime import datetime
 
@@ -307,14 +307,20 @@ async def get_error_event_with_analysis(
 ):
     """
     Get an error event along with its analysis (if available).
+    Optimized to use a single query with eager loading.
     """
-    # Get event
-    event = get_error_event_by_id(db, event_id)
+    # Get event with analysis in a single query using eager loading
+    event = db.query(models.ErrorEvent)\
+        .options(joinedload(models.ErrorEvent.analysis))\
+        .options(joinedload(models.ErrorEvent.project))\
+        .filter(models.ErrorEvent.id == event_id)\
+        .first()
+    
     if not event:
         raise HTTPException(status_code=404, detail=f"Error event {event_id} not found")
     
-    # Get analysis (may be None)
-    analysis = get_error_analysis_by_event_id(db, event_id)
+    # Analysis is already loaded via the relationship
+    analysis = event.analysis
     
     return schemas.ErrorEventWithAnalysis(
         event=schemas.ErrorEventDetail(
@@ -404,6 +410,9 @@ async def create_project_endpoint(
             id=db_project.id,
             project_key=db_project.project_key,
             name=db_project.name,
+            language=db_project.language,
+            framework=db_project.framework,
+            description=db_project.description,
             repo_config=db_project.repo_config,
             created_at=db_project.created_at,
             error_count=error_count
@@ -436,6 +445,9 @@ async def list_projects(
                 id=project.id,
                 project_key=project.project_key,
                 name=project.name,
+                language=project.language,
+                framework=project.framework,
+                description=project.description,
                 repo_config=project.repo_config,
                 created_at=project.created_at,
                 error_count=error_count

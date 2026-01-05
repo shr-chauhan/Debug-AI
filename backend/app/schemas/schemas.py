@@ -105,6 +105,9 @@ class ErrorEventWithAnalysis(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(..., description="Project name")
     project_key: str = Field(..., description="Project key (unique identifier)")
+    language: Optional[str] = Field(None, description="Primary programming language (e.g., python, javascript, typescript)")
+    framework: Optional[str] = Field(None, description="Framework used (e.g., django, react, express, spring)")
+    description: Optional[str] = Field(None, description="Project description and context")
     repo_provider: Optional[str] = Field("github", description="Repository provider (github, gitlab)")
     repo_owner: Optional[str] = Field(None, description="Repository owner/username")
     repo_name: Optional[str] = Field(None, description="Repository name")
@@ -115,6 +118,9 @@ class ProjectResponse(BaseModel):
     id: int
     project_key: str
     name: str
+    language: Optional[str] = None
+    framework: Optional[str] = None
+    description: Optional[str] = None
     repo_config: Optional[Dict[str, Any]] = None
     created_at: datetime
     error_count: Optional[int] = 0  # Will be populated by query

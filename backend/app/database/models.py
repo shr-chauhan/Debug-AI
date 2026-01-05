@@ -26,6 +26,10 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     project_key = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
+    # Project context for better AI analysis
+    language = Column(String, nullable=True)  # e.g., "python", "javascript", "typescript", "java"
+    framework = Column(String, nullable=True)  # e.g., "django", "react", "express", "spring"
+    description = Column(Text, nullable=True)  # Project description/context
     # Repository configuration for AI debugging (stored as JSON)
     repo_config = Column(JSON, nullable=True)  # {owner, repo, branch, provider, access_token}
     created_at = Column(DateTime(timezone=True), server_default=func.now())

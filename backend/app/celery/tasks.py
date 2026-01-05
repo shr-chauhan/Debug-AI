@@ -60,8 +60,11 @@ def analyze_error_event(self, error_event_id: int):
         # Get repo config from project (if available)
         repo_config_dict = error_event.project.repo_config if error_event.project.repo_config else None
         
+        # Get project for context (language, framework, description)
+        project = error_event.project
+        
         # Perform AI analysis
-        analysis_result = perform_ai_analysis(error_event, repo_config_dict)
+        analysis_result = perform_ai_analysis(error_event, repo_config_dict, project)
         
         # Store analysis result
         analysis = models.ErrorAnalysis(
@@ -94,7 +97,8 @@ def analyze_error_event(self, error_event_id: int):
 
 def perform_ai_analysis(
     error_event: models.ErrorEvent,
-    repo_config_dict: Optional[Dict] = None
+    repo_config_dict: Optional[Dict] = None,
+    project: Optional[models.Project] = None
 ) -> dict:
     """
     Perform AI analysis on an error event using LLM with stack trace and source code context.
@@ -103,6 +107,7 @@ def perform_ai_analysis(
         error_event: ErrorEvent model instance
         repo_config_dict: Repository configuration dict (from Project.repo_config)
                           Format: {owner, repo, branch, provider, access_token}
+        project: Project model instance (for language, framework, description context)
         
     Returns:
         dict: Analysis result with analysis, model, and confidence
@@ -177,11 +182,14 @@ def perform_ai_analysis(
             logger.warning(f"Failed to initialize Git fetcher: {e}")
             # Continue without source code context
     
-    # Step 3: Build structured prompt
+    # Step 3: Build structured prompt with project context
     prompt = build_debugging_prompt(
         error_message=error_message,
         stack_trace=error_stack,
         source_code_context=source_code_context,
+        project_language=project.language if project else None,
+        project_framework=project.framework if project else None,
+        project_description=project.description if project else None,
         max_total_lines=500
     )
     

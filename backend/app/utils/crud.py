@@ -172,6 +172,9 @@ def create_project(db: Session, project_data: schemas.ProjectCreate) -> models.P
     project = models.Project(
         project_key=project_data.project_key,
         name=project_data.name,
+        language=project_data.language,
+        framework=project_data.framework,
+        description=project_data.description,
         repo_config=repo_config
     )
     
