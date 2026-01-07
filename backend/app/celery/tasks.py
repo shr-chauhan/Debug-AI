@@ -72,6 +72,7 @@ def analyze_error_event(self, error_event_id: int):
             analysis_text=analysis_result["analysis"],
             model=analysis_result["model"],
             confidence=analysis_result.get("confidence"),
+            has_source_code=1 if analysis_result.get("has_source_code", False) else 0,
         )
         
         db.add(analysis)
@@ -193,9 +194,13 @@ def perform_ai_analysis(
         max_total_lines=500
     )
     
+    # Track whether source code was successfully used
+    has_source_code = len(source_code_context) > 0
+    
     # Step 4: Call LLM
     try:
         analysis_result = _call_llm(prompt)
+        analysis_result["has_source_code"] = has_source_code
         return analysis_result
     except Exception as e:
         logger.error(f"LLM call failed: {e}", exc_info=True)
@@ -203,7 +208,8 @@ def perform_ai_analysis(
         return {
             "analysis": f"Error Analysis:\n\nMessage: {error_message}\n\nStack Trace:\n{error_stack}\n\nNote: LLM analysis failed ({str(e)}). Please review the stack trace manually.",
             "model": "fallback",
-            "confidence": "low"
+            "confidence": "low",
+            "has_source_code": has_source_code
         }
 
 

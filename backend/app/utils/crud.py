@@ -7,25 +7,17 @@ from app.schemas import schemas
 
 
 def get_or_create_project(db: Session, project_key: str, project_name: str = None):
-    """Get existing project or create new one (thread-safe)"""
+    """
+    Get existing project by project_key.
+    Note: Projects must be created via the API (with user ownership) before SDK can send errors.
+    This function will only return existing projects, not create new ones.
+    """
     project = db.query(models.Project).filter_by(project_key=project_key).first()
     
-    if project:
-        return project
+    if not project:
+        raise ValueError(f"Project with key '{project_key}' does not exist. Please create the project first via the API.")
     
-    try:
-        project = models.Project(
-            project_key=project_key,
-            name=project_name or project_key
-        )
-        db.add(project)
-        db.commit()
-        db.refresh(project)
-        return project
-    except IntegrityError:
-        # Race condition: another request created the project between our check and insert
-        db.rollback()
-        return db.query(models.Project).filter_by(project_key=project_key).one()
+    return project
 
 
 def create_error_event(db: Session, event: schemas.EventCreate):
@@ -65,6 +57,7 @@ def get_error_event_by_id(db: Session, event_id: int) -> Optional[models.ErrorEv
 
 def get_error_events(
     db: Session,
+    user_id: Optional[int] = None,
     project_key: Optional[str] = None,
     status_code: Optional[int] = None,
     min_status_code: Optional[int] = None,
@@ -81,6 +74,10 @@ def get_error_events(
         Tuple of (list of error events, total count)
     """
     query = db.query(models.ErrorEvent).join(models.Project)
+    
+    # Filter by user_id if provided (ensures users only see their own projects' errors)
+    if user_id is not None:
+        query = query.filter(models.Project.user_id == user_id)
     
     # Apply filters
     if project_key:
@@ -121,6 +118,7 @@ def get_error_analysis_by_event_id(
 
 def get_error_analyses(
     db: Session,
+    user_id: Optional[int] = None,
     project_key: Optional[str] = None,
     model: Optional[str] = None,
     confidence: Optional[str] = None,
@@ -136,6 +134,10 @@ def get_error_analyses(
     query = db.query(models.ErrorAnalysis).join(
         models.ErrorEvent
     ).join(models.Project)
+    
+    # Filter by user_id if provided (ensures users only see their own projects' analyses)
+    if user_id is not None:
+        query = query.filter(models.Project.user_id == user_id)
     
     # Apply filters
     if project_key:
@@ -156,7 +158,7 @@ def get_error_analyses(
     return analyses, total
 
 
-def create_project(db: Session, project_data: schemas.ProjectCreate) -> models.Project:
+def create_project(db: Session, project_data: schemas.ProjectCreate, user_id: int) -> models.Project:
     """Create a new project with optional repository configuration"""
     # Build repo_config only if both owner and repo are provided
     # If not provided, repo_config will be None and AI analysis will use stack trace only
@@ -172,6 +174,7 @@ def create_project(db: Session, project_data: schemas.ProjectCreate) -> models.P
     project = models.Project(
         project_key=project_data.project_key,
         name=project_data.name,
+        user_id=user_id,
         language=project_data.language,
         framework=project_data.framework,
         description=project_data.description,
@@ -200,16 +203,21 @@ def get_project_by_key(db: Session, project_key: str) -> Optional[models.Project
 
 def get_projects(
     db: Session,
+    user_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0
 ) -> Tuple[List[models.Project], int]:
     """
-    Get all projects with pagination.
+    Get projects with pagination, optionally filtered by user_id.
     
     Returns:
         Tuple of (list of projects, total count)
     """
     query = db.query(models.Project)
+    
+    # Filter by user_id if provided
+    if user_id is not None:
+        query = query.filter(models.Project.user_id == user_id)
     
     # Get total count
     total = query.count()

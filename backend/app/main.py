@@ -195,9 +195,10 @@ async def list_error_events(
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid end_date format: {end_date}. Use ISO format.")
         
-        # Get error events
+        # Get error events (filtered by current user's projects)
         events, total = get_error_events(
             db=db,
+            user_id=current_user.id,
             project_key=project_key,
             status_code=status_code,
             min_status_code=min_status_code,
@@ -247,11 +248,15 @@ async def get_error_event(
     db: Session = Depends(get_db)
 ):
     """
-    Get a specific error event by ID.
+    Get a specific error event by ID (only if from a project owned by current user).
     """
     event = get_error_event_by_id(db, event_id)
     if not event:
         raise HTTPException(status_code=404, detail=f"Error event {event_id} not found")
+    
+    # Check ownership - ensure the event belongs to a project owned by the user
+    if event.project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have access to this error event")
     
     return schemas.ErrorEventDetail(
         id=event.id,
@@ -274,12 +279,16 @@ async def get_error_analysis(
     db: Session = Depends(get_db)
 ):
     """
-    Get AI analysis for a specific error event.
+    Get AI analysis for a specific error event (only if from a project owned by current user).
     """
-    # Verify event exists
+    # Verify event exists and check ownership
     event = get_error_event_by_id(db, event_id)
     if not event:
         raise HTTPException(status_code=404, detail=f"Error event {event_id} not found")
+    
+    # Check ownership
+    if event.project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have access to this error event")
     
     # Get analysis
     analysis = get_error_analysis_by_event_id(db, event_id)
@@ -295,6 +304,7 @@ async def get_error_analysis(
         analysis_text=analysis.analysis_text,
         model=analysis.model,
         confidence=analysis.confidence,
+        has_source_code=bool(analysis.has_source_code) if analysis.has_source_code is not None else False,
         created_at=analysis.created_at
     )
 
@@ -308,6 +318,7 @@ async def get_error_event_with_analysis(
     """
     Get an error event along with its analysis (if available).
     Optimized to use a single query with eager loading.
+    Only accessible if the event belongs to a project owned by the current user.
     """
     # Get event with analysis in a single query using eager loading
     event = db.query(models.ErrorEvent)\
@@ -318,6 +329,10 @@ async def get_error_event_with_analysis(
     
     if not event:
         raise HTTPException(status_code=404, detail=f"Error event {event_id} not found")
+    
+    # Check ownership
+    if event.project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have access to this error event")
     
     # Analysis is already loaded via the relationship
     analysis = event.analysis
@@ -341,6 +356,7 @@ async def get_error_event_with_analysis(
             analysis_text=analysis.analysis_text,
             model=analysis.model,
             confidence=analysis.confidence,
+            has_source_code=bool(analysis.has_source_code) if analysis.has_source_code is not None else False,
             created_at=analysis.created_at
         ) if analysis else None
     )
@@ -368,6 +384,7 @@ async def list_error_analyses(
     try:
         analyses, total = get_error_analyses(
             db=db,
+            user_id=current_user.id,
             project_key=project_key,
             model=model,
             confidence=confidence,
@@ -382,6 +399,7 @@ async def list_error_analyses(
                 analysis_text=analysis.analysis_text,
                 model=analysis.model,
                 confidence=analysis.confidence,
+                has_source_code=bool(analysis.has_source_code) if analysis.has_source_code is not None else False,
                 created_at=analysis.created_at
             )
             for analysis in analyses
@@ -398,10 +416,10 @@ async def create_project_endpoint(
     db: Session = Depends(get_db)
 ):
     """
-    Create a new project.
+    Create a new project (owned by the current user).
     """
     try:
-        db_project = create_project(db, project)
+        db_project = create_project(db, project, current_user.id)
         
         # Get error count
         error_count = get_project_error_count(db, db_project.id)
@@ -432,10 +450,10 @@ async def list_projects(
     db: Session = Depends(get_db)
 ):
     """
-    List all projects with pagination.
+    List all projects for the current user with pagination.
     """
     try:
-        projects, total = get_projects(db, limit=limit, offset=offset)
+        projects, total = get_projects(db, user_id=current_user.id, limit=limit, offset=offset)
         
         # Get error counts for each project
         project_responses = []
@@ -469,11 +487,15 @@ async def get_project(
     db: Session = Depends(get_db)
 ):
     """
-    Get a specific project by ID.
+    Get a specific project by ID (only if owned by current user).
     """
     project = get_project_by_id(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    
+    # Check ownership
+    if project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have access to this project")
     
     error_count = get_project_error_count(db, project_id)
     
@@ -481,6 +503,9 @@ async def get_project(
         id=project.id,
         project_key=project.project_key,
         name=project.name,
+        language=project.language,
+        framework=project.framework,
+        description=project.description,
         repo_config=project.repo_config,
         created_at=project.created_at,
         error_count=error_count

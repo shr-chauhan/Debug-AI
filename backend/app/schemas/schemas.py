@@ -90,6 +90,7 @@ class ErrorAnalysisResponse(BaseModel):
     analysis_text: str
     model: str
     confidence: Optional[str]
+    has_source_code: bool  # True if source code was used in analysis, False if only stack trace
     created_at: datetime
 
     class Config:

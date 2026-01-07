@@ -19,6 +19,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    # Relationships
+    projects = relationship("Project", back_populates="user")
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -26,6 +29,7 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     project_key = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # Owner of the project
     # Project context for better AI analysis
     language = Column(String, nullable=True)  # e.g., "python", "javascript", "typescript", "java"
     framework = Column(String, nullable=True)  # e.g., "django", "react", "express", "spring"
@@ -34,6 +38,8 @@ class Project(Base):
     repo_config = Column(JSON, nullable=True)  # {owner, repo, branch, provider, access_token}
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Relationships
+    user = relationship("User", back_populates="projects")
     error_events = relationship("ErrorEvent", back_populates="project")
 
 
@@ -59,6 +65,7 @@ class ErrorAnalysis(Base):
     analysis_text = Column(Text, nullable=False)  # Using Text for longer analysis content
     model = Column(String, nullable=False)  # e.g., "gpt-4", "claude-3", etc.
     confidence = Column(String, nullable=True)  # Store as string to allow flexible formats
+    has_source_code = Column(Integer, nullable=True)  # 1 if source code was used, 0 if only stack trace, None if unknown
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     error_event = relationship("ErrorEvent", back_populates="analysis")

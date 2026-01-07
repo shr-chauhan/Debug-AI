@@ -224,6 +224,7 @@ export interface ErrorAnalysis {
   analysis_text: string;
   model: string;
   confidence: string | null;
+  has_source_code: boolean;
   created_at: string;
 }
 
