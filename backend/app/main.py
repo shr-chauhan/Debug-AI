@@ -15,6 +15,7 @@ from app.utils.crud import (
     get_error_analysis_by_event_id,
     get_error_analyses,
     create_project,
+    update_project,
     get_project_by_id,
     get_projects,
     get_project_error_count,
@@ -510,6 +511,40 @@ async def get_project(
         created_at=project.created_at,
         error_count=error_count
     )
+
+
+@app.put("/api/v1/projects/{project_id}", response_model=schemas.ProjectResponse)
+async def update_project_endpoint(
+    project_id: int,
+    project: schemas.ProjectUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing project (only if owned by current user).
+    """
+    try:
+        db_project = update_project(db, project_id, project, current_user.id)
+        
+        # Get error count
+        error_count = get_project_error_count(db, db_project.id)
+        
+        return schemas.ProjectResponse(
+            id=db_project.id,
+            project_key=db_project.project_key,
+            name=db_project.name,
+            language=db_project.language,
+            framework=db_project.framework,
+            description=db_project.description,
+            repo_config=db_project.repo_config,
+            created_at=db_project.created_at,
+            error_count=error_count
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Failed to update project")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 if __name__ == "__main__":

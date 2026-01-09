@@ -191,6 +191,69 @@ def create_project(db: Session, project_data: schemas.ProjectCreate, user_id: in
         raise ValueError(f"Project with key '{project_data.project_key}' already exists")
 
 
+def update_project(db: Session, project_id: int, project_data: schemas.ProjectUpdate, user_id: int) -> models.Project:
+    """Update an existing project with optional repository configuration"""
+    project = get_project_by_id(db, project_id)
+    if not project:
+        raise ValueError(f"Project with id {project_id} not found")
+    
+    # Check ownership
+    if project.user_id != user_id:
+        raise ValueError("You don't have permission to update this project")
+    
+    # Update fields if provided
+    if project_data.name is not None:
+        project.name = project_data.name
+    
+    if project_data.language is not None:
+        project.language = project_data.language
+    
+    if project_data.framework is not None:
+        project.framework = project_data.framework
+    
+    if project_data.description is not None:
+        project.description = project_data.description
+    
+    # Handle repo_config update
+    # If any repo field is provided, rebuild the entire repo_config
+    if project_data.repo_owner is not None or project_data.repo_name is not None:
+        # If both owner and repo are provided, create/update repo_config
+        if project_data.repo_owner and project_data.repo_name:
+            existing_config = project.repo_config or {}
+            repo_config = {
+                "provider": project_data.repo_provider or existing_config.get("provider", "github"),
+                "owner": project_data.repo_owner,
+                "repo": project_data.repo_name,
+                "branch": project_data.branch or existing_config.get("branch", "main")
+            }
+            project.repo_config = repo_config
+        # If owner or repo is set to empty string, clear repo_config
+        elif not project_data.repo_owner or not project_data.repo_name:
+            project.repo_config = None
+    # If only provider or branch is provided, update those fields in existing repo_config
+    elif project_data.repo_provider is not None or project_data.branch is not None:
+        if project.repo_config:
+            # Create a new dict to ensure SQLAlchemy detects the change
+            updated_config = dict(project.repo_config)
+            if project_data.repo_provider is not None:
+                updated_config["provider"] = project_data.repo_provider
+            if project_data.branch is not None:
+                updated_config["branch"] = project_data.branch
+            project.repo_config = updated_config
+        # If repo_config doesn't exist but provider/branch are provided, we need owner/repo too
+        elif project_data.repo_provider is not None or project_data.branch is not None:
+            # Can't update provider/branch without owner/repo, so ignore
+            pass
+    
+    try:
+        db.commit()
+        db.refresh(project)
+        return project
+    except IntegrityError:
+        db.rollback()
+        raise ValueError("Failed to update project")
+
+
 def get_project_by_id(db: Session, project_id: int) -> Optional[models.Project]:
     """Get a project by ID"""
     return db.query(models.Project).filter(models.Project.id == project_id).first()

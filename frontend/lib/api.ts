@@ -174,6 +174,17 @@ export interface ProjectCreate {
   branch?: string;
 }
 
+export interface ProjectUpdate {
+  name?: string;
+  language?: string;
+  framework?: string;
+  description?: string;
+  repo_provider?: string;
+  repo_owner?: string;
+  repo_name?: string;
+  branch?: string;
+}
+
 export interface ProjectListResponse {
   projects: Project[];
   total: number;
@@ -284,6 +295,13 @@ export const api = {
   async createProject(data: ProjectCreate): Promise<Project> {
     return apiRequest<Project>('/api/v1/projects', {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateProject(projectId: number, data: ProjectUpdate): Promise<Project> {
+    return apiRequest<Project>(`/api/v1/projects/${projectId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   },

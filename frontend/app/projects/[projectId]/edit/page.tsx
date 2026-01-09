@@ -1,16 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { ClientHeader } from "@/components/ClientHeader";
-import { api, ApiClientError } from "@/lib/api";
-
-function generateProjectKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+import { api, ApiClientError, Project } from "@/lib/api";
+import { UserSync } from "@/components/UserSync";
 
 // Language and framework mappings
 const LANGUAGES = [
@@ -106,14 +100,20 @@ const FRAMEWORKS_BY_LANGUAGE: Record<string, Array<{ value: string; label: strin
   ],
 };
 
-export default function NewProjectPage() {
+export default function EditProjectPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const params = useParams();
+  const projectId = params.projectId as string;
+  const projectIdNum = parseInt(projectId, 10);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   
   const [formData, setFormData] = useState({
     name: "",
-    project_key: "",
     language: "",
     framework: "",
     description: "",
@@ -127,6 +127,105 @@ export default function NewProjectPage() {
     ? FRAMEWORKS_BY_LANGUAGE[formData.language] || []
     : [];
 
+  // Load project data
+  useEffect(() => {
+    if (isNaN(projectIdNum)) {
+      setError("Invalid project ID");
+      setLoading(false);
+      return;
+    }
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    let isCancelled = false;
+
+    const fetchProject = async () => {
+      try {
+        // Wait a bit for token to be available
+        await new Promise<void>((resolve) => {
+          if (abortController.signal.aborted) {
+            resolve();
+            return;
+          }
+          
+          const token = localStorage.getItem('stackwise_api_token');
+          if (token) {
+            resolve();
+            return;
+          }
+          // Wait for sync event or timeout
+          const timeout = setTimeout(() => {
+            if (!abortController.signal.aborted) {
+              resolve();
+            }
+          }, 2000);
+          const handler = () => {
+            clearTimeout(timeout);
+            window.removeEventListener('user-synced', handler);
+            if (!abortController.signal.aborted) {
+              resolve();
+            }
+          };
+          window.addEventListener('user-synced', handler, { once: true });
+        });
+
+        if (isCancelled || abortController.signal.aborted) {
+          setLoading(false);
+          return;
+        }
+
+        const projectData = await api.getProject(projectIdNum);
+        
+        if (isCancelled || abortController.signal.aborted) {
+          setLoading(false);
+          return;
+        }
+
+        setProject(projectData);
+
+        // Pre-fill form with existing data
+        setFormData({
+          name: projectData.name || "",
+          language: projectData.language || "",
+          framework: projectData.framework || "",
+          description: projectData.description || "",
+          repo_provider: projectData.repo_config?.provider || "",
+          repo_owner: projectData.repo_config?.owner || "",
+          repo_name: projectData.repo_config?.repo || "",
+          branch: projectData.repo_config?.branch || "",
+        });
+        
+        // Set loading to false only after all data is set
+        if (!isCancelled && !abortController.signal.aborted) {
+          setLoading(false);
+        }
+      } catch (e) {
+        if (isCancelled || abortController.signal.aborted) {
+          setLoading(false);
+          return;
+        }
+        console.error('Failed to fetch project:', e);
+        setError(e instanceof Error ? e.message : "Failed to load project");
+        setLoading(false);
+      }
+    };
+
+    fetchProject();
+
+    return () => {
+      isCancelled = true;
+      abortController.abort();
+      abortControllerRef.current = null;
+    };
+  }, [projectIdNum]);
+
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const language = e.target.value;
     setFormData({
@@ -136,24 +235,14 @@ export default function NewProjectPage() {
     });
   };
 
-  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const name = e.target.value;
-    setFormData({
-      ...formData,
-      name,
-      project_key: generateProjectKey(name),
-    });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
     setError(null);
 
     try {
-      const project = await api.createProject({
-        name: formData.name,
-        project_key: formData.project_key,
+      const updatedProject = await api.updateProject(projectIdNum, {
+        name: formData.name || undefined,
         language: formData.language || undefined,
         framework: formData.framework || undefined,
         description: formData.description || undefined,
@@ -163,28 +252,171 @@ export default function NewProjectPage() {
         branch: formData.repo_owner && formData.repo_name ? (formData.branch || "main") : undefined,
       });
 
-      router.push(`/projects/${project.id}`);
+      router.push(`/projects/${updatedProject.id}`);
     } catch (e) {
       if (e instanceof ApiClientError) {
         setError(e.detail || e.message);
       } else {
-        setError("Failed to create project");
+        setError("Failed to update project");
       }
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
+  // Skeleton loader component with shimmer effect
+  const SkeletonLoader = () => {
+    const SkeletonBox = ({ className = "" }: { className?: string }) => (
+      <div className={`skeleton-shimmer rounded ${className}`}></div>
+    );
+
+    return (
+      <div className="bg-white rounded-lg shadow p-6 space-y-6">
+        {/* Project Name Skeleton */}
+        <div>
+          <SkeletonBox className="h-4 w-24 mb-2" />
+          <SkeletonBox className="h-10 w-full" />
+        </div>
+
+        {/* Project Context Section Skeleton */}
+        <div className="border-t pt-6">
+          <div className="mb-4">
+            <SkeletonBox className="h-5 w-48 mb-2" />
+            <SkeletonBox className="h-4 w-96" />
+          </div>
+
+          <div className="space-y-4">
+            {/* Language Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-40 mb-2" />
+              <SkeletonBox className="h-10 w-full" />
+            </div>
+
+            {/* Framework Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-32 mb-2" />
+              <SkeletonBox className="h-10 w-full" />
+            </div>
+
+            {/* Description Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-36 mb-2" />
+              <SkeletonBox className="h-20 w-full" />
+            </div>
+          </div>
+        </div>
+
+        {/* Repository Configuration Section Skeleton */}
+        <div className="border-t pt-6">
+          <div className="mb-4">
+            <SkeletonBox className="h-5 w-64 mb-2" />
+            <SkeletonBox className="h-4 w-full max-w-md mb-1" />
+            <SkeletonBox className="h-3 w-80" />
+          </div>
+
+          <div className="space-y-4">
+            {/* Provider Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-24 mb-2" />
+              <SkeletonBox className="h-10 w-full" />
+            </div>
+
+            {/* Owner Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-32 mb-2" />
+              <SkeletonBox className="h-10 w-full" />
+            </div>
+
+            {/* Repo Name Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-36 mb-2" />
+              <SkeletonBox className="h-10 w-full" />
+            </div>
+
+            {/* Branch Skeleton */}
+            <div>
+              <SkeletonBox className="h-4 w-20 mb-2" />
+              <SkeletonBox className="h-10 w-full" />
+            </div>
+          </div>
+
+          {/* Note Skeleton */}
+          <div className="mt-4 p-3 bg-gray-100 rounded-md">
+            <SkeletonBox className="h-3 w-full" />
+          </div>
+        </div>
+
+        {/* Buttons Skeleton */}
+        <div className="flex gap-4 pt-4">
+          <SkeletonBox className="h-10 w-32" />
+          <SkeletonBox className="h-10 w-24" />
+        </div>
+      </div>
+    );
+  };
+
+  // Show skeleton loader while loading or when project data is not yet available
+  if (loading || !project) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <UserSync />
+        <ClientHeader />
+        <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="mb-8">
+            <div className="h-4 bg-gray-200 rounded w-16 mb-4 animate-pulse"></div>
+            <div className="h-8 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
+            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
+          </div>
+          <SkeletonLoader />
+        </main>
+      </div>
+    );
+  }
+
+  if (error && !project) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <UserSync />
+        <ClientHeader />
+        <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="mb-8">
+            <button
+              onClick={() => router.back()}
+              className="text-indigo-600 hover:text-indigo-700 text-sm mb-4 inline-block"
+            >
+              ← Back
+            </button>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-md p-4">
+            <p className="text-sm text-red-800">{error}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <UserSync />
       <ClientHeader />
       
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Create New Project</h1>
+          <button
+            onClick={() => router.back()}
+            className="text-indigo-600 hover:text-indigo-700 text-sm mb-4 inline-block"
+          >
+            ← Back
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900">Edit Project</h1>
           <p className="mt-2 text-gray-600">
-            Set up a new project for error tracking and AI debugging
+            Update project details and repository configuration
           </p>
+          {project && (
+            <p className="mt-1 text-sm text-gray-500">
+              Project Key: <code className="bg-gray-100 px-2 py-1 rounded font-mono text-xs">{project.project_key}</code>
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
@@ -203,28 +435,10 @@ export default function NewProjectPage() {
               id="name"
               required
               value={formData.name}
-              onChange={handleNameChange}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
               placeholder="My Awesome Project"
             />
-          </div>
-
-          <div>
-            <label htmlFor="project_key" className="block text-sm font-medium text-gray-700">
-              Project Key *
-            </label>
-            <input
-              type="text"
-              id="project_key"
-              required
-              value={formData.project_key}
-              onChange={(e) => setFormData({ ...formData, project_key: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border font-mono"
-              placeholder="my-awesome-project"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Used in SDK configuration. Must be unique and URL-safe.
-            </p>
           </div>
 
           <div className="border-t pt-6">
@@ -377,7 +591,7 @@ export default function NewProjectPage() {
             
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
               <p className="text-xs text-blue-800">
-                <strong>Note:</strong> Leave all repository fields empty to skip repository setup. 
+                <strong>Note:</strong> Leave all repository fields empty to remove repository configuration. 
                 AI analysis will still work using stack trace information only.
               </p>
             </div>
@@ -386,10 +600,10 @@ export default function NewProjectPage() {
           <div className="flex gap-4 pt-4">
             <button
               type="submit"
-              disabled={loading}
+              disabled={saving}
               className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Creating..." : "Create Project"}
+              {saving ? "Saving..." : "Save Changes"}
             </button>
             <button
               type="button"
@@ -404,5 +618,3 @@ export default function NewProjectPage() {
     </div>
   );
 }
-
-

@@ -115,6 +115,17 @@ class ProjectCreate(BaseModel):
     branch: Optional[str] = Field("main", description="Repository branch")
 
 
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = Field(None, description="Project name")
+    language: Optional[str] = Field(None, description="Primary programming language (e.g., python, javascript, typescript)")
+    framework: Optional[str] = Field(None, description="Framework used (e.g., django, react, express, spring)")
+    description: Optional[str] = Field(None, description="Project description and context")
+    repo_provider: Optional[str] = Field(None, description="Repository provider (github, gitlab)")
+    repo_owner: Optional[str] = Field(None, description="Repository owner/username")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branch: Optional[str] = Field(None, description="Repository branch")
+
+
 class ProjectResponse(BaseModel):
     id: int
     project_key: str

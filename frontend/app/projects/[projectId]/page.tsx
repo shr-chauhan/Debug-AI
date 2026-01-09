@@ -121,13 +121,11 @@ export default function ProjectDetailPage() {
           >
             ← Back to Projects
           </Link>
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-              <p className="mt-2 text-gray-600">
-                Project Key: <code className="bg-gray-100 px-2 py-1 rounded font-mono text-sm">{project.project_key}</code>
-              </p>
-            </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
+            <p className="mt-2 text-gray-600">
+              Project Key: <code className="bg-gray-100 px-2 py-1 rounded font-mono text-sm">{project.project_key}</code>
+            </p>
           </div>
         </div>
 
