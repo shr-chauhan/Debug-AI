@@ -1,0 +1,27 @@
+# Example override file for local development
+# Copy this to docker-compose.override.yml and customize
+# Docker Compose automatically uses override files
+
+version: '3.8'
+
+services:
+  backend:
+    volumes:
+      - ./backend:/app  # Mount source for hot reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      ENV: development
+
+  celery:
+    volumes:
+      - ./backend:/app
+    command: celery -A app.celery.celery_app worker --loglevel=debug --queues=ai_analysis --concurrency=1
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    environment:
+      NODE_ENV: development

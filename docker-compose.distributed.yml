@@ -1,0 +1,159 @@
+version: '3.8'
+
+# Distributed Deployment Configuration
+# This file is for deploying services across multiple machines
+# Each service can be deployed on a different server
+# Use: docker-compose -f docker-compose.distributed.yml up
+
+services:
+  # PostgreSQL Database (Machine 1: Database Server)
+  postgres:
+    image: postgres:15-alpine
+    container_name: stackwise-postgres
+    environment:
+      POSTGRES_DB: error_ingestion
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stackwise-network
+    # Deploy on database server
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager  # Adjust based on your swarm setup
+
+  # Redis for Celery (Machine 1 or 2: Can be on same as Postgres or separate)
+  redis:
+    image: redis:7-alpine
+    container_name: stackwise-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stackwise-network
+    # Can be on same machine as Postgres or separate
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+  # FastAPI Backend (Machine 2 or 3: Application Server)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stackwise-backend
+    environment:
+      # Use external hostnames/IPs for distributed setup
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:5432/error_ingestion
+      REDIS_URL: redis://${REDIS_HOST:-redis}:6379/0
+      ENV: ${ENV:-production}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_DAYS: ${JWT_EXPIRATION_DAYS:-30}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        sleep 5 &&
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - stackwise-network
+    restart: unless-stopped
+    # Deploy on application server
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+
+  # Celery Worker (Machine 3 or 4: Worker Server - can have multiple instances)
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stackwise-celery
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:5432/error_ingestion
+      REDIS_URL: redis://${REDIS_HOST:-redis}:6379/0
+      ENV: ${ENV:-production}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    volumes:
+      - ./backend:/app
+    command: celery -A app.celery.celery_app worker --loglevel=info --queues=ai_analysis --concurrency=2
+    networks:
+      - stackwise-network
+    restart: unless-stopped
+    # Deploy on worker server(s) - can scale horizontally
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == worker
+
+  # Next.js Frontend (Machine 4 or separate: Web Server)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stackwise-frontend
+    environment:
+      # Use external backend URL
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://${BACKEND_HOST:-backend}:8000}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - stackwise-network
+    restart: unless-stopped
+    # Deploy on web server
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  stackwise-network:
+    driver: overlay  # Use overlay network for multi-host Docker Swarm
