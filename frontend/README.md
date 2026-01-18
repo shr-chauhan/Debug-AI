@@ -140,6 +140,38 @@ frontend/
 
 The dashboard uses a typed API client (`lib/api.ts`) that communicates with the backend FastAPI service. All API calls are typed and include proper error handling.
 
+## Testing
+
+### Running Tests
+
+```bash
+# Run tests once
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with UI
+npm run test:ui
+```
+
+### Test Structure
+
+Tests are located in the `tests/` directory:
+- `tests/components/` - Component tests
+- `tests/pages/` - Page component tests
+- `tests/lib/` - API client and utility tests
+- `tests/mocks/` - MSW handlers for API mocking
+
+### Testing Stack
+
+- **Vitest** - Fast test runner (consistent with SDK)
+- **React Testing Library** - Component testing
+- **MSW (Mock Service Worker)** - API mocking
+- **@testing-library/jest-dom** - DOM matchers
+
+Tests mock external dependencies (API calls, NextAuth) and focus on user-facing behavior rather than implementation details.
+
 ## Development Notes
 
 - All routes except `/login` are protected by middleware

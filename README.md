@@ -125,7 +125,7 @@ For development or custom deployments, see the [detailed setup guide](#detailed-
 
 ### AI Analysis Features
 - ✅ Automatic analysis for errors (status_code >= 500)
-- ✅ Stack trace parsing and file path extraction
+- ✅ Stack trace parsing and file path extractionpmi
 - ✅ Source code context from Git repositories
 - ✅ LLM-powered error debugging (OpenAI GPT models)
 - ✅ Confidence scoring and model tracking
